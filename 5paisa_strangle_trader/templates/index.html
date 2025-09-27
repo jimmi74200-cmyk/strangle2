@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>5paisa Historical Data</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 2em; }
+        .container { max-width: 800px; margin: auto; }
+        .form-group { margin-bottom: 1em; }
+        label { display: block; margin-bottom: 0.5em; }
+        input, select { width: 100%; padding: 8px; box-sizing: border-box; }
+        button { padding: 10px 15px; background-color: #007bff; color: white; border: none; cursor: pointer; }
+        .error { color: red; }
+        table { width: 100%; border-collapse: collapse; margin-top: 2em; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        th { background-color: #f2f2f2; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Fetch Historical Candle Data</h1>
+        <form method="post">
+            <div class="form-group">
+                <label for="exch">Exchange</label>
+                <select id="exch" name="exch">
+                    <option value="N">NSE (N)</option>
+                    <option value="B">BSE (B)</option>
+                    <option value="M">MCX (M)</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="exch_type">Exchange Type</label>
+                <select id="exch_type" name="exch_type">
+                    <option value="C">Cash (C)</option>
+                    <option value="D">Derivatives (D)</option>
+                    <option value="U">Currency (U)</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="scrip_code">Scrip Code</label>
+                <input type="text" id="scrip_code" name="scrip_code" required>
+            </div>
+            <div class="form-group">
+                <label for="interval">Interval</label>
+                <select id="interval" name="interval">
+                    <option value="1m">1 Minute</option>
+                    <option value="5m">5 Minutes</option>
+                    <option value="10m">10 Minutes</option>
+                    <option value="15m">15 Minutes</option>
+                    <option value="30m">30 Minutes</option>
+                    <option value="60m">60 Minutes</option>
+                    <option value="1d">1 Day</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="from_date">From Date</label>
+                <input type="date" id="from_date" name="from_date" required>
+            </div>
+            <div class="form-group">
+                <label for="to_date">To Date</label>
+                <input type="date" id="to_date" name="to_date" required>
+            </div>
+            <button type="submit">Fetch Data</button>
+        </form>
+
+
+        {% if error %}
+            <p class="error">{{ error }}</p>
+        {% endif %}
+
+        {% if candles %}
+            <h2>Results</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Timestamp</th>
+                        <th>Open</th>
+                        <th>High</th>
+                        <th>Low</th>
+                        <th>Close</th>
+                        <th>Volume</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for candle in candles %}
+                    <tr>
+                        <td>{{ candle[0] }}</td>
+                        <td>{{ "%.2f"|format(candle[1]) }}</td>
+                        <td>{{ "%.2f"|format(candle[2]) }}</td>
+                        <td>{{ "%.2f"|format(candle[3]) }}</td>
+                        <td>{{ "%.2f"|format(candle[4]) }}</td>
+                        <td>{{ candle[5] }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        {% elif request.method == 'POST' and not error %}
+            <p>No data returned for the given parameters.</p>
+        {% endif %}
+    </div>
+
+    <script>
+        // Set the default 'to_date' to today
+        document.addEventListener('DOMContentLoaded', (event) => {
+            const toDateInput = document.getElementById('to_date');
+            if (!toDateInput.value) {
+                const today = new Date().toISOString().split('T')[0];
+                toDateInput.value = today;
+            }
+        });
+    </script>
+</body>
+</html>
