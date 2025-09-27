@@ -28,7 +28,7 @@ else:
 
 # --- Backtesting Functions ---
 
-def get_full_historical_dataset(scrip_code, months=12):
+def get_full_historical_dataset(exch, exch_type, scrip_code, months=12):
     """
     Fetches a large 1-minute dataset for backtesting, fetching month by month.
     """
@@ -44,7 +44,7 @@ def get_full_historical_dataset(scrip_code, months=12):
             to_date_str = to_date.strftime('%Y-%m-%d')
 
             logging.info(f"Fetching data from {from_date_str} to {to_date_str}...")
-            candles = fetch_historical_data('N', 'D', scrip_code, '1m', from_date_str, to_date_str)
+            candles = fetch_historical_data(exch, exch_type, scrip_code, '1m', from_date_str, to_date_str)
             if candles:
                 all_candles.extend(candles)
             time.sleep(1) # Be respectful to the API rate limits
@@ -245,17 +245,23 @@ def print_results(trades):
 if __name__ == "__main__":
     logging.info("--- Starting Supertrend Strategy Backtest ---")
 
-    # Prompt the user to enter the scrip code
+    # --- Gather User Inputs ---
+    exch = input("Enter Exchange (e.g., N for NSE, B for BSE): ").upper()
+    exch_type = input("Enter Exchange Type (e.g., C for Cash, D for Derivatives): ").upper()
     scrip_code = input("Please enter the scrip code you want to backtest: ")
 
-    # Validate that the input is a numeric string
-    if scrip_code and scrip_code.isdigit():
+    # --- Input Validation ---
+    if exch not in ['N', 'B', 'M']:
+        logging.error("Invalid Exchange. Please enter N, B, or M.")
+    elif exch_type not in ['C', 'D', 'U', 'X', 'Y']:
+         logging.error("Invalid Exchange Type. Please enter C, D, U, X, or Y.")
+    elif not scrip_code.isdigit():
+        logging.error("Invalid scrip code. Please enter a valid numeric scrip code.")
+    else:
         # Fetch data for the last 3 months for a quicker test run
-        full_data = get_full_historical_dataset(scrip_code, months=3)
+        full_data = get_full_historical_dataset(exch, exch_type, scrip_code, months=3)
         if full_data is not None and not full_data.empty:
             trade_log = run_backtest(full_data)
             print_results(trade_log)
         else:
-            logging.error(f"Could not fetch data for scrip code {scrip_code}.")
-    else:
-        logging.error("Invalid scrip code. Please enter a valid numeric scrip code.")
+            logging.error(f"Could not fetch data for Scrip {scrip_code} on {exch}/{exch_type}.")
