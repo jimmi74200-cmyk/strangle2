@@ -1,10 +1,18 @@
 # This script will contain the Flask web server for the historical data dashboard.
+import os
 from flask import Flask, render_template, request
 from historical_data import fetch_historical_data
 import config
 from datetime import datetime
 
-app = Flask(__name__)
+# --- Robust Path for Templates ---
+# Get the absolute path of the directory where the script is located
+script_dir = os.path.dirname(os.path.abspath(__file__))
+# Join this path with the 'templates' folder name
+template_folder = os.path.join(script_dir, 'templates')
+
+# Initialize the Flask app with the explicit template folder path
+app = Flask(__name__, template_folder=template_folder)
 
 @app.route('/', methods=['GET', 'POST'])
 def index():
