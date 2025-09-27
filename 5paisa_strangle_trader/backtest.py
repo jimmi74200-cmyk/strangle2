@@ -68,46 +68,63 @@ def get_full_historical_dataset(exch, exch_type, scrip_code, months=12):
         logging.error(f"An error occurred while fetching the full historical dataset: {e}")
         return None
 
+def _manual_supertrend(df, period=7, multiplier=3):
+    """
+    Helper function to manually calculate Supertrend, avoiding library issues.
+    """
+    df = df.copy()
+    atr = df.ta.atr(length=period, append=False)
+    if atr is None:
+        logging.error("ATR calculation failed within manual_supertrend.")
+        return None
+
+    hl2 = (df['High'] + df['Low']) / 2
+    df['upper_band'] = hl2 + (multiplier * atr)
+    df['lower_band'] = hl2 - (multiplier * atr)
+    df['in_uptrend'] = True
+
+    for current in range(1, len(df.index)):
+        previous = current - 1
+
+        if df['Close'][current] < df['lower_band'][previous]:
+            df['in_uptrend'][current] = False
+        elif df['Close'][current] > df['upper_band'][previous]:
+            df['in_uptrend'][current] = True
+        else:
+            df['in_uptrend'][current] = df['in_uptrend'][previous]
+
+        if df['in_uptrend'][current]:
+            df['lower_band'][current] = max(df['lower_band'][current], df['lower_band'][previous])
+        else:
+            df['upper_band'][current] = min(df['upper_band'][current], df['upper_band'][previous])
+
+    df['SUPERTd_7_3.0'] = df['in_uptrend'].apply(lambda x: 1 if x else -1)
+    return df
+
 def get_supertrend_signal(df):
     """
-    Calculates the Supertrend on a given 15-min DataFrame and returns the latest signal.
-    This version is more robust to prevent KeyErrors.
+    Calculates the Supertrend using a reliable manual implementation and returns the latest signal.
     """
     try:
-        # Supertrend indicator needs a minimum number of periods to calculate.
-        # Let's use a safe buffer, e.g., length * 2. Default length is 7.
-        if df.empty or len(df) < 14:
-            logging.warning(f"DataFrame has only {len(df)} rows, which is insufficient for a reliable Supertrend calculation.")
+        # --- Data Cleaning Step ---
+        original_rows = len(df)
+        df_cleaned = df[df['High'] != df['Low']].copy()
+        if len(df_cleaned) < original_rows:
+            logging.warning(f"Removed {original_rows - len(df_cleaned)} zero-range candles before calculation.")
+
+        if df_cleaned.empty or len(df_cleaned) < 14:
+            logging.warning(f"DataFrame has only {len(df_cleaned)} valid rows, insufficient for Supertrend.")
             return 'none'
 
-        # --- Final Diagnostic Logging ---
-        # Print detailed info about the DataFrame before calculation
-        logging.info("--- DataFrame Info before Supertrend Calculation ---")
-        logging.info(df.info())
-        logging.info("--- DataFrame Head ---")
-        logging.info(df.head())
-        logging.info("--- DataFrame Tail ---")
-        logging.info(df.tail())
-        logging.info("----------------------------------------------------")
+        # Use the robust manual Supertrend calculation
+        supertrend_df = _manual_supertrend(df_cleaned, period=7, multiplier=3)
 
-        # Calculate Supertrend separately to inspect the result before using it
-        supertrend_df = df.ta.supertrend(length=7, multiplier=3)
-
-        # Check if the calculation was successful and returned a DataFrame
         if supertrend_df is None or supertrend_df.empty:
-            logging.warning("Supertrend calculation returned no data.")
+            logging.error("Manual Supertrend calculation failed to produce a result.")
             return 'none'
 
-        # The signal column we need
-        signal_col = 'SUPERTd_7_3.0'
-
-        # Check if the signal column exists in the results
-        if signal_col not in supertrend_df.columns:
-            logging.error(f"Supertrend calculation failed to produce the '{signal_col}' column.")
-            return 'none'
-
-        # Get the last fully formed signal (from the second to last candle)
-        latest_signal = supertrend_df[signal_col].iloc[-2]
+        # Get the last fully formed signal
+        latest_signal = supertrend_df['SUPERTd_7_3.0'].iloc[-2]
 
         if latest_signal == 1:
             return 'buy'
@@ -117,7 +134,6 @@ def get_supertrend_signal(df):
             return 'none'
 
     except Exception as e:
-        # Catching any other unexpected errors during calculation
         logging.error(f"An unexpected error occurred during Supertrend calculation: {e}")
         return 'none'
 
