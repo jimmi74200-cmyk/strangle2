@@ -69,19 +69,56 @@ def get_full_historical_dataset(exch, exch_type, scrip_code, months=12):
         return None
 
 def get_supertrend_signal(df):
-    """Calculates the Supertrend on a given 15-min DataFrame and returns the latest signal."""
+    """
+    Calculates the Supertrend on a given 15-min DataFrame and returns the latest signal.
+    This version is more robust to prevent KeyErrors.
+    """
     try:
-        if df.empty or len(df) < 2:
+        # Supertrend indicator needs a minimum number of periods to calculate.
+        # Let's use a safe buffer, e.g., length * 2. Default length is 7.
+        if df.empty or len(df) < 14:
+            logging.warning(f"DataFrame has only {len(df)} rows, which is insufficient for a reliable Supertrend calculation.")
             return 'none'
-        df.ta.supertrend(length=7, multiplier=3, append=True)
-        latest_signal = df['SUPERTd_7_3.0'].iloc[-2]
+
+        # --- Final Diagnostic Logging ---
+        # Print detailed info about the DataFrame before calculation
+        logging.info("--- DataFrame Info before Supertrend Calculation ---")
+        logging.info(df.info())
+        logging.info("--- DataFrame Head ---")
+        logging.info(df.head())
+        logging.info("--- DataFrame Tail ---")
+        logging.info(df.tail())
+        logging.info("----------------------------------------------------")
+
+        # Calculate Supertrend separately to inspect the result before using it
+        supertrend_df = df.ta.supertrend(length=7, multiplier=3)
+
+        # Check if the calculation was successful and returned a DataFrame
+        if supertrend_df is None or supertrend_df.empty:
+            logging.warning("Supertrend calculation returned no data.")
+            return 'none'
+
+        # The signal column we need
+        signal_col = 'SUPERTd_7_3.0'
+
+        # Check if the signal column exists in the results
+        if signal_col not in supertrend_df.columns:
+            logging.error(f"Supertrend calculation failed to produce the '{signal_col}' column.")
+            return 'none'
+
+        # Get the last fully formed signal (from the second to last candle)
+        latest_signal = supertrend_df[signal_col].iloc[-2]
+
         if latest_signal == 1:
             return 'buy'
         elif latest_signal == -1:
             return 'sell'
-        return 'none'
+        else:
+            return 'none'
+
     except Exception as e:
-        logging.error(f"Error calculating Supertrend: {e}")
+        # Catching any other unexpected errors during calculation
+        logging.error(f"An unexpected error occurred during Supertrend calculation: {e}")
         return 'none'
 
 def simulate_trade(signal, day_data, entry_time):
@@ -164,30 +201,37 @@ def run_backtest(full_data):
     logging.info("--- Starting Backtest Loop ---")
     trades = []
 
-    # Group the 1-minute data by day
-    daily_groups = full_data.groupby(full_data.index.date)
+    # Get a list of unique trading days
+    unique_days = sorted(pd.unique(full_data.index.date))
 
-    for day, day_data in daily_groups:
-        logging.info(f"Processing data for {day}")
+    # Start from the 3rd day to ensure we have enough lookback data
+    for i in range(2, len(unique_days)):
+        current_day = unique_days[i]
+        logging.info(f"Processing data for {current_day}")
 
-        entry_time = datetime.combine(day, datetime.strptime("09:17", "%H:%M").time())
-        data_for_signal = day_data.loc[day_data.index < entry_time]
+        # Define the time window for calculating the signal
+        # We use data from the last 2 days plus the current day up to 9:17 AM
+        start_date = unique_days[i-2]
+        entry_time = datetime.combine(current_day, datetime.strptime("09:17", "%H:%M").time())
+
+        # Create the data slice for signal calculation
+        data_for_signal = full_data.loc[(full_data.index.date >= start_date) & (full_data.index < entry_time)]
 
         if data_for_signal.empty:
-            logging.warning(f"No data available before 09:17 on {day}. Skipping.")
+            logging.warning(f"Not enough lookback data for {current_day}. Skipping.")
             continue
 
+        # Resample the combined data to get a reliable Supertrend signal
         ohlc_dict = {'Open': 'first', 'High': 'max', 'Low': 'min', 'Close': 'last', 'Volume': 'sum'}
         df_15min = data_for_signal.resample('15min').apply(ohlc_dict).dropna()
 
         signal = get_supertrend_signal(df_15min)
-
-        # --- Enhanced Logging ---
-        # Log the signal for every day to see what's happening.
-        logging.info(f"Signal for {day}: {signal}")
+        logging.info(f"Signal for {current_day}: {signal}")
 
         if signal in ['buy', 'sell']:
-            logging.info(f"Trade triggered on {day}. Simulating...")
+            logging.info(f"Trade triggered on {current_day}. Simulating...")
+            # Use only the current day's data for the trade simulation itself
+            day_data = full_data[full_data.index.date == current_day]
             trade_result = simulate_trade(signal, day_data, entry_time)
             if trade_result:
                 trades.append(trade_result)
