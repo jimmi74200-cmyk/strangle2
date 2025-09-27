@@ -178,12 +178,16 @@ def run_backtest(full_data):
             continue
 
         ohlc_dict = {'Open': 'first', 'High': 'max', 'Low': 'min', 'Close': 'last', 'Volume': 'sum'}
-        df_15min = data_for_signal.resample('15T').apply(ohlc_dict).dropna()
+        df_15min = data_for_signal.resample('15min').apply(ohlc_dict).dropna()
 
         signal = get_supertrend_signal(df_15min)
 
+        # --- Enhanced Logging ---
+        # Log the signal for every day to see what's happening.
+        logging.info(f"Signal for {day}: {signal}")
+
         if signal in ['buy', 'sell']:
-            logging.info(f"Signal found on {day}: {signal.upper()}. Simulating trade...")
+            logging.info(f"Trade triggered on {day}. Simulating...")
             trade_result = simulate_trade(signal, day_data, entry_time)
             if trade_result:
                 trades.append(trade_result)
