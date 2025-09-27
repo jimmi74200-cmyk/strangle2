@@ -26,44 +26,7 @@ if config.ACCESS_TOKEN != "YOUR_ACCESS_TOKEN":
 else:
     logging.error("Access Token not found. Please run an authentication script first.")
 
-# --- Placeholder functions for backtesting logic ---
-
-def get_nifty_futures_scrip_for_backtest():
-    """
-    Fetches the scrip code for the most recently expired NIFTY future contract.
-    """
-    try:
-        logging.info("Fetching scrip master to find a recently expired NIFTY futures contract...")
-        scripmaster = client.get_scripmaster()
-        if not scripmaster:
-            logging.error("Failed to fetch scripmaster.")
-            return None
-
-        expired_nifty_futures = []
-        today = datetime.today()
-
-        for scrip in scripmaster:
-            if scrip['Name'] == 'NIFTY' and scrip['Exch'] == 'N' and scrip['ExchType'] == 'D' and scrip['CpType'] == 'XX':
-                timestamp_ms = int(scrip['ExpiryDate'][6:-2])
-                expiry_date = datetime.fromtimestamp(timestamp_ms / 1000)
-                if expiry_date < today:
-                    expired_nifty_futures.append({
-                        'ScripCode': scrip['ScripCode'],
-                        'Expiry': expiry_date
-                    })
-
-        if not expired_nifty_futures:
-            logging.error("No expired NIFTY futures contracts found for backtesting.")
-            return None
-
-        # Sort by expiry date descending to get the most recently expired one
-        latest_expired_future = sorted(expired_nifty_futures, key=lambda x: x['Expiry'], reverse=True)[0]
-        logging.info(f"Found historical NIFTY future for backtest: ScripCode {latest_expired_future['ScripCode']}, Expired on {latest_expired_future['Expiry'].date()}")
-        return latest_expired_future['ScripCode']
-
-    except Exception as e:
-        logging.error(f"An error occurred while fetching the NIFTY futures scrip: {e}")
-        return None
+# --- Backtesting Functions ---
 
 def get_full_historical_dataset(scrip_code, months=12):
     """
@@ -282,14 +245,17 @@ def print_results(trades):
 if __name__ == "__main__":
     logging.info("--- Starting Supertrend Strategy Backtest ---")
 
-    scrip_code = get_nifty_futures_scrip_for_backtest()
-    if scrip_code:
+    # Prompt the user to enter the scrip code
+    scrip_code = input("Please enter the scrip code you want to backtest: ")
+
+    # Validate that the input is a numeric string
+    if scrip_code and scrip_code.isdigit():
         # Fetch data for the last 3 months for a quicker test run
         full_data = get_full_historical_dataset(scrip_code, months=3)
         if full_data is not None and not full_data.empty:
             trade_log = run_backtest(full_data)
             print_results(trade_log)
         else:
-            logging.error("Halting backtest due to lack of data.")
+            logging.error(f"Could not fetch data for scrip code {scrip_code}.")
     else:
-        logging.error("Halting backtest because no scrip code could be found.")
+        logging.error("Invalid scrip code. Please enter a valid numeric scrip code.")
