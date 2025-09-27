@@ -71,10 +71,10 @@
             <p class="error">{{ error }}</p>
         {% endif %}
 
-        {% if candles %}
+        {% if candles and csv_filename %}
             <div class="results-header">
                 <h2>Results</h2>
-                <a href="/download_csv" class="button">Download CSV</a>
+                <a href="{{ url_for('download', filename=csv_filename) }}" class="button">Download CSV</a>
             </div>
             <table>
                 <thead>

@@ -1,8 +1,8 @@
 import os
 import sys
-import io
 import csv
-from flask import Flask, request, render_template_string, session, Response
+import uuid
+from flask import Flask, request, render_template_string, send_from_directory, after_this_request
 from datetime import datetime
 
 # Add the subdirectory to the Python path to allow imports from it
@@ -13,11 +13,8 @@ import config
 
 # Initialize the Flask app
 app = Flask(__name__)
-# Set a secret key for session management. Required for storing data.
-app.secret_key = os.urandom(24)
 
 # --- Manual Template Loading ---
-# This is a robust workaround for environments where template discovery fails.
 def load_template(filename):
     try:
         template_path = os.path.join(os.path.dirname(__file__), 'templates', filename)
@@ -30,13 +27,11 @@ def load_template(filename):
 def index():
     candles = None
     error = None
+    csv_filename = None
     today = datetime.today().strftime('%Y-%m-%d')
     form_data = request.form
 
     if request.method == 'POST':
-        # Clear any previous data from the session on a new request
-        session.pop('candles', None)
-
         if config.ACCESS_TOKEN == "YOUR_ACCESS_TOKEN" or not config.ACCESS_TOKEN:
             error = "Access token not found in config.py. Please run an authentication script first."
         else:
@@ -46,9 +41,16 @@ def index():
                     form_data['interval'], form_data['from_date'], form_data['to_date']
                 )
                 candles = fetch_historical_data(exch, exch_type, scrip_code, interval, from_date, to_date)
+
                 if candles:
-                    # Store the fetched data in the session for the download link
-                    session['candles'] = candles
+                    # Generate a unique filename and save the data to a temporary CSV file
+                    csv_filename = f"data_{uuid.uuid4()}.csv"
+                    tmp_filepath = os.path.join('tmp', csv_filename)
+
+                    with open(tmp_filepath, 'w', newline='') as csvfile:
+                        writer = csv.writer(csvfile)
+                        writer.writerow(['Timestamp', 'Open', 'High', 'Low', 'Close', 'Volume'])
+                        writer.writerows(candles)
                 else:
                     error = "Failed to fetch data from the API or no data was returned. Check the console for more details."
             except KeyError as e:
@@ -56,36 +58,28 @@ def index():
             except Exception as e:
                 error = f"An internal error occurred: {e}"
 
-    # Manually load the template and render it as a string
     template_string = load_template('index.html')
-    return render_template_string(template_string, candles=candles, error=error, to_date=today, form_data=form_data)
+    return render_template_string(template_string, candles=candles, error=error, to_date=today, form_data=form_data, csv_filename=csv_filename)
 
-@app.route('/download_csv')
-def download_csv():
-    # Retrieve the candle data from the session
-    candles = session.get('candles')
+@app.route('/download/<path:filename>')
+def download(filename):
+    """
+    Securely sends a file from the 'tmp' directory for download
+    and deletes it afterwards.
+    """
+    tmp_dir = os.path.join(os.path.dirname(__file__), 'tmp')
 
-    if not candles:
-        return "No data to download. Please fetch data first.", 404
+    # Schedule the file for deletion after the request has been handled
+    @after_this_request
+    def cleanup(response):
+        try:
+            os.remove(os.path.join(tmp_dir, filename))
+        except Exception as e:
+            app.logger.error(f"Error removing temporary file {filename}: {e}")
+        return response
 
-    # Use an in-memory text buffer to build the CSV
-    output = io.StringIO()
-    writer = csv.writer(output)
-
-    # Write the header row
-    header = ['Timestamp', 'Open', 'High', 'Low', 'Close', 'Volume']
-    writer.writerow(header)
-
-    # Write the data rows
-    writer.writerows(candles)
-
-    # Prepare the response
-    output.seek(0)
-    return Response(
-        output,
-        mimetype="text/csv",
-        headers={"Content-Disposition": "attachment;filename=historical_data.csv"}
-    )
+    # Use send_from_directory for security
+    return send_from_directory(tmp_dir, filename, as_attachment=True)
 
 if __name__ == '__main__':
     print("Starting Flask server...")
